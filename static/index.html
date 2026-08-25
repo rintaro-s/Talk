@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会話補助</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">会話補助</div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="settingsBtn">設定</button>
+  </header>
+
+  <main>
+    <!-- セットアップ -->
+    <section id="setup" class="setup">
+      <div class="steps">
+        <span id="st1" class="active">1 モード</span><span>→</span>
+        <span id="st2">2 事前情報</span><span>→</span>
+        <span id="st3">3 開始</span>
+      </div>
+
+      <section id="step1" class="stage">
+        <h1>どの場面で使いますか？</h1>
+        <p class="lead">モードごとに、会話中に見る画面そのものが変わります。</p>
+
+        <div class="mode-list">
+          <button class="mode" data-mode="general">
+            <strong>汎用会話</strong>
+            <small>会議・相談・打ち合わせ向け。</small>
+            <span class="mode-preview">決定事項 / 未解決 / 次アクションを中心に表示</span>
+          </button>
+          <button class="mode" data-mode="interviewer">
+            <strong>面接官</strong>
+            <small>候補者を評価・深掘りする場面向け。</small>
+            <span class="mode-preview">主張整理 / 深掘り質問 / 未確認項目 / 矛盾</span>
+          </button>
+          <button class="mode" data-mode="ideation">
+            <strong>アイデア出し</strong>
+            <small>ブレスト・企画会議向け。</small>
+            <span class="mode-preview">アイデアを自動分類し、ツリーで整理</span>
+          </button>
+          <button class="mode" data-mode="presentation">
+            <strong>プレゼン</strong>
+            <small>資料を見ながら話す場面向け。</small>
+            <span class="mode-preview">現在スライド / 言い漏れ / 次に話す内容 / 場繋ぎ</span>
+          </button>
+        </div>
+
+        <div class="stage-actions">
+          <button id="next1" class="btn primary" disabled>次へ</button>
+        </div>
+      </section>
+
+      <section id="step2" class="stage hidden">
+        <h1 id="contextTitle">事前情報を入れる</h1>
+        <p class="lead" id="contextLead">会話中の支援に使う前提情報を入れます。空でも開始できます。</p>
+
+        <div id="normalInputs">
+          <div class="input-tabs">
+            <button class="input-tab active" data-tab="text">テキスト</button>
+            <button class="input-tab" data-tab="file">ファイル</button>
+          </div>
+
+          <div id="textPane">
+            <textarea id="contextText" placeholder="議題、相手の情報、確認したいことなど"></textarea>
+          </div>
+          <div id="filePane" class="hidden">
+            <label class="dropzone" for="fileInput">
+              <div>
+                <strong>txt / md ファイルを選択</strong>
+                <small>クリックして選択</small>
+                <div class="file-pill hidden" id="filePill"></div>
+              </div>
+            </label>
+            <input id="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown">
+          </div>
+        </div>
+
+        <div id="presentationInputs" class="hidden">
+          <div class="form-group">
+            <label>資料テキスト <span class="required">必須</span></label>
+            <textarea id="presentationDocument" placeholder="スライド内容を貼り付け。各スライドは --- または # 見出し で区切ってください。"></textarea>
+            <div class="file-inline">
+              <label for="presentationFile" class="btn small">ファイルから読み込む</label>
+              <input type="file" id="presentationFile" accept=".txt,.md,text/plain,text/markdown">
+              <span class="file-pill hidden" id="presentationFilePill"></span>
+            </div>
+            <p class="hint">pptx / pdf はテキストに変換して貼り付けてください。</p>
+          </div>
+          <div class="form-group">
+            <label>カンペ <span class="required">必須</span></label>
+            <textarea id="presentationScript" placeholder="1行ごとに話すポイントを書いてください。"></textarea>
+            <div class="file-inline">
+              <label for="scriptFile" class="btn small">ファイルから読み込む</label>
+              <input type="file" id="scriptFile" accept=".txt,.md,text/plain,text/markdown">
+              <span class="file-pill hidden" id="scriptFilePill"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-actions split">
+          <button class="btn" id="back1">戻る</button>
+          <button class="btn primary" id="next2">次へ</button>
+        </div>
+      </section>
+
+      <section id="step3" class="stage hidden">
+        <h1>開始する</h1>
+        <p class="lead">開始後は、録音操作とモード専用の支援ダッシュボードだけを表示します。</p>
+        <dl class="review">
+          <dt>モード</dt><dd id="reviewMode">—</dd>
+          <dt>事前情報</dt><dd id="reviewContext">なし</dd>
+        </dl>
+        <div class="stage-actions split">
+          <button class="btn" id="back2">戻る</button>
+          <button class="btn primary" id="startBtn">会話を開始</button>
+        </div>
+      </section>
+    </section>
+
+    <!-- 会話中 -->
+    <section id="session" class="hidden">
+      <div class="session-head">
+        <h1>会話中</h1>
+        <span class="mode-label" id="modeLabel"></span>
+        <div class="spacer"></div>
+        <button class="btn" id="minutesBtn">議事録</button>
+        <button class="btn danger" id="endBtn">終了</button>
+      </div>
+
+      <div class="controlbar">
+        <button id="recordToggle" class="btn primary main-control">録音開始</button>
+        <div class="session-state" id="sessionState">待機中</div>
+        <div class="timer" id="timer">00:00</div>
+      </div>
+
+      <div id="dashboard"></div>
+    </section>
+
+    <!-- 議事録 -->
+    <section id="minutesView" class="hidden">
+      <div class="minutes-head">
+        <h1>議事録</h1>
+        <div class="spacer"></div>
+        <button class="btn" id="copyMinutes">コピー</button>
+        <button class="btn" id="downloadMinutes">ダウンロード</button>
+        <button class="btn primary" id="restartBtn">最初から</button>
+      </div>
+      <div id="minutesBody" class="minutes-body">
+        <p class="loading">生成中...</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="dialogBg" class="dialog-bg hidden">
+  <div class="dialog">
+    <h2 id="dialogTitle">会話履歴</h2>
+    <div id="dialogBody"></div>
+    <div class="dialog-actions">
+      <button class="btn" id="closeDialog">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div id="settingsBg" class="dialog-bg hidden">
+  <div class="dialog">
+    <h2>設定</h2>
+    <div class="form-group">
+      <label>LLM</label>
+      <select id="settingProvider">
+        <option value="ollama">Ollama（ローカル）</option>
+        <option value="sakura">さくらのAI Engine</option>
+      </select>
+    </div>
+    <div id="settingsOllama">
+      <div class="form-group">
+        <label>エンドポイント</label>
+        <input type="text" id="settingOllamaEndpoint" value="http://localhost:11434">
+      </div>
+      <div class="form-group">
+        <label>モデル</label>
+        <input type="text" id="settingOllamaModel" value="qwen3.5:9b">
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" id="settingOllamaThink"> 推論モードを使う</label>
+      </div>
+    </div>
+    <div id="settingsSakura" class="hidden">
+      <div class="form-group">
+        <label>エンドポイント</label>
+        <input type="text" id="settingSakuraEndpoint" value="https://api.ai.sakura.ad.jp/v1/responses">
+      </div>
+      <div class="form-group">
+        <label>モデル</label>
+        <input type="text" id="settingSakuraModel" value="sakura-ai-engine">
+      </div>
+      <div class="form-group">
+        <label>APIキー</label>
+        <input type="password" id="settingSakuraKey" placeholder="sk-...">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>音声認識</label>
+      <select id="settingSpeechProvider">
+        <option value="web_speech">Web Speech API</option>
+        <option value="vosk">Vosk（ローカル）</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Vosk モデル</label>
+      <select id="settingVoskModel">
+        <option value="small">small（軽量）</option>
+        <option value="ja">ja（高精度）</option>
+      </select>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" id="closeSettings">閉じる</button>
+      <button class="btn primary" id="saveSettings">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

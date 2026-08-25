@@ -1,0 +1,17 @@
+{
+  "provider": "ollama",
+  "ollama": {
+    "endpoint": "http://localhost:11434",
+    "model": "qwen3.5:9b",
+    "think": false
+  },
+  "sakura": {
+    "endpoint": "https://api.ai.sakura.ad.jp/v1/responses",
+    "model": "sakura-ai-engine",
+    "api_key": ""
+  },
+  "speech": {
+    "provider": "vosk",
+    "vosk_model": "small"
+  }
+}

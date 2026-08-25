@@ -1,0 +1,7 @@
+.venv
+__pycache__
+/vosk-model-ja-0.22
+/vosk-model-small-ja-0.22
+
+vosk-model-small-ja-0.22.zip
+vosk-model-ja-0.22.zip

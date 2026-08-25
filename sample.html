@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会話補助</title>
+<style>
+:root{
+  --bg:#ede1cf;
+  --surface:#f7efe3;
+  --surface-2:#e5d6c0;
+  --surface-3:#fbf6ee;
+  --ink:#28231d;
+  --muted:#74695c;
+  --line:#c6b59e;
+  --line-strong:#9a876d;
+  --accent:#51463a;
+  --accent-2:#6b5b49;
+  --danger:#8a4034;
+  --good:#48634f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink)}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
+  line-height:1.55;
+}
+button,input,textarea{font:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+
+.app{
+  width:min(1320px,calc(100% - 20px));
+  margin:0 auto;
+  padding:10px 0 24px;
+}
+.topbar{
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.brand{font-size:19px;font-weight:800}
+.topbar .spacer{flex:1}
+
+.btn{
+  min-height:38px;
+  border:1px solid var(--line-strong);
+  background:var(--surface);
+  color:var(--ink);
+  padding:0 13px;
+  border-radius:0;
+  font-weight:700;
+}
+.btn:hover{background:#eadbc7}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.primary:hover{background:#40372f}
+.btn.danger{color:var(--danger)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- wizard ---------- */
+.wizard{
+  width:min(980px,100%);
+  margin:28px 0 0 3%;
+}
+.steps{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  font-size:12px;
+  color:var(--muted);
+  margin:0 0 10px 2px;
+}
+.steps .active{color:var(--ink);font-weight:800}
+.steps .done{text-decoration:line-through;color:#978873}
+.stage{
+  background:var(--surface);
+  border-left:5px solid var(--ink);
+  padding:22px 22px 18px;
+}
+.stage h1{margin:0 0 5px;font-size:24px;line-height:1.3}
+.stage .lead{margin:0 0 16px;color:var(--muted);font-size:14px;max-width:760px}
+
+.mode-list{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.mode{
+  text-align:left;
+  background:#f3e9da;
+  border:1px solid var(--line);
+  padding:15px 16px;
+  min-height:96px;
+}
+.mode:hover{background:#eadbc7}
+.mode.selected{
+  background:#ddccb3;
+  border-color:var(--ink);
+  box-shadow:inset 5px 0 0 var(--ink);
+}
+.mode strong{display:block;font-size:16px;margin-bottom:3px}
+.mode small{display:block;color:var(--muted);font-size:13px}
+.mode-preview{
+  display:block;
+  margin-top:8px;
+  font-size:12px;
+  color:#51483e;
+}
+.mode:nth-child(5){grid-column:1/-1;width:76%}
+
+.stage-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:16px}
+.stage-actions.split{justify-content:space-between}
+
+.input-tabs{display:flex;gap:16px;margin-bottom:10px}
+.input-tab{
+  border:0;background:transparent;padding:2px 0 5px;color:var(--muted);font-weight:800;
+}
+.input-tab.active{color:var(--ink);text-decoration:underline;text-underline-offset:5px}
+textarea{
+  width:94%;
+  min-height:210px;
+  resize:vertical;
+  background:var(--surface-3);
+  border:1px solid var(--line-strong);
+  border-radius:0;
+  padding:13px 14px;
+  color:var(--ink);
+  outline:none;
+}
+.dropzone{
+  width:88%;
+  min-height:195px;
+  border:1px dashed var(--line-strong);
+  background:#f4eadc;
+  display:flex;
+  align-items:center;
+  padding:26px 32px;
+}
+.dropzone strong{display:block;margin-bottom:5px}
+.dropzone small{color:var(--muted)}
+.file-pill{margin-top:10px;font-size:13px;font-weight:700}
+input[type=file]{display:none}
+
+.review{
+  display:grid;
+  grid-template-columns:100px minmax(0,1fr);
+  gap:8px 14px;
+  margin:14px 0 0;
+}
+.review dt{color:var(--muted)}
+.review dd{margin:0}
+
+/* ---------- session chrome ---------- */
+.session-head{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:7px;
+}
+.session-head h1{font-size:18px;margin:0}
+.mode-label{font-size:12px;color:var(--muted);font-weight:800}
+.session-head .spacer{flex:1}
+
+.controlbar{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  background:#dfcfb8;
+  padding:8px;
+  border-left:4px solid var(--ink);
+  margin-bottom:8px;
+}
+.controlbar .main-control{min-width:118px}
+.session-state{font-size:13px;font-weight:800;margin-left:5px}
+.timer{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:800;padding-right:4px}
+
+.dashboard{
+  display:grid;
+  grid-template-columns:minmax(0,1.55fr) minmax(320px,.75fr);
+  gap:8px;
+  align-items:start;
+}
+.primary-zone,
+.side-zone{
+  min-width:0;
+}
+.block{
+  background:var(--surface);
+  padding:14px 15px;
+  margin-bottom:8px;
+}
+.block.emphasis{
+  background:#e0d0b8;
+  border-left:5px solid var(--ink);
+}
+.block.subtle{
+  background:#f2e8da;
+  border-left:1px solid var(--line-strong);
+}
+.block-title{
+  font-size:12px;
+  color:var(--muted);
+  font-weight:800;
+  margin-bottom:7px;
+}
+.block.emphasis .block-title{color:var(--ink)}
+.big-copy{font-size:19px;line-height:1.6;margin:0;font-weight:650}
+.mid-copy{font-size:15px;line-height:1.65;margin:0}
+.small-copy{font-size:13px;line-height:1.55;margin:0;color:#51483d}
+
+.two-col{
+  display:grid;
+  grid-template-columns:1.08fr .92fr;
+  gap:8px;
+}
+.three-col{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+}
+ul.clean{margin:0;padding-left:18px}
+ul.clean li+li{margin-top:6px}
+
+.transcript-mini{
+  background:#eadcc8;
+  padding:10px 12px;
+}
+.transcript-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:7px;
+}
+.transcript-head strong{font-size:12px}
+.transcript-head button{
+  border:0;background:transparent;color:var(--muted);padding:0;font-size:12px;
+}
+.transcript-row{
+  display:grid;
+  grid-template-columns:48px 1fr;
+  gap:7px;
+  font-size:12px;
+  line-height:1.5;
+}
+.transcript-row + .transcript-row{margin-top:5px}
+.speaker{color:var(--muted);font-weight:800}
+.manual{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:6px;
+  margin-top:8px;
+}
+.manual input{
+  width:100%;
+  border:1px solid var(--line-strong);
+  border-radius:0;
+  background:var(--surface-3);
+  padding:8px 9px;
+}
+
+/* mode-specific */
+.question-box{
+  font-size:20px;
+  line-height:1.6;
+  font-weight:700;
+}
+.answer-steps{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:6px;
+  margin-top:4px;
+}
+.answer-step{
+  background:#f4eadc;
+  padding:10px;
+}
+.answer-step b{display:block;font-size:12px;margin-bottom:4px}
+.answer-step span{font-size:13px}
+
+.deep-question{
+  display:grid;
+  grid-template-columns:34px 1fr;
+  gap:8px;
+  align-items:start;
+}
+.deep-question + .deep-question{margin-top:9px}
+.qnum{
+  width:28px;height:28px;
+  display:grid;place-items:center;
+  background:#dfcfb8;
+  font-size:12px;
+  font-weight:800;
+}
+
+.idea-board{
+  background:#f5ecdf;
+  padding:15px;
+  overflow:auto;
+}
+.idea-root{
+  display:inline-block;
+  background:var(--ink);
+  color:#fff;
+  padding:8px 10px;
+  font-size:13px;
+  font-weight:800;
+  margin-bottom:12px;
+}
+.idea-columns{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:10px;
+}
+.idea-group{
+  border-left:2px solid var(--line-strong);
+  padding-left:10px;
+}
+.idea-group h3{
+  margin:0 0 7px;
+  font-size:13px;
+}
+.idea-node{
+  background:#eadbc7;
+  padding:8px 9px;
+  font-size:13px;
+  margin-bottom:6px;
+}
+.idea-node.related{background:#ded0bc}
+.idea-tag{font-size:11px;color:var(--muted);display:block;margin-top:3px}
+
+.slide-area{
+  display:grid;
+  grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
+  gap:8px;
+}
+.slide-preview{
+  background:#f2e8da;
+  border:1px solid var(--line);
+  min-height:245px;
+  padding:20px;
+}
+.slide-num{font-size:12px;color:var(--muted);margin-bottom:18px}
+.slide-preview h3{font-size:21px;margin:0 0 15px}
+.slide-preview ul{padding-left:18px}
+.slide-progress{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:4px;
+  margin-top:8px;
+}
+.slide-progress span{height:6px;background:#cbbb9f}
+.slide-progress span.done{background:var(--accent)}
+.slide-progress span.current{background:#887661}
+
+/* full transcript dialog */
+.dialog-bg{
+  position:fixed;inset:0;z-index:20;
+  background:rgba(42,35,27,.3);
+  display:grid;place-items:center;padding:20px;
+}
+.dialog{
+  width:min(650px,100%);
+  max-height:80vh;
+  overflow:auto;
+  background:var(--surface);
+  border-left:5px solid var(--ink);
+  padding:20px;
+}
+.dialog h2{margin:0 0 10px;font-size:18px}
+.dialog-actions{display:flex;justify-content:flex-end;margin-top:15px}
+
+@media(max-width:900px){
+  .wizard{margin-left:0}
+  .dashboard{grid-template-columns:1fr}
+  .two-col,.three-col,.idea-columns,.slide-area{grid-template-columns:1fr}
+  .mode:nth-child(5){width:auto}
+  .answer-steps{grid-template-columns:1fr}
+}
+@media(max-width:620px){
+  .app{width:min(100% - 10px,1320px)}
+  .mode-list{grid-template-columns:1fr}
+  .mode:nth-child(5){grid-column:auto}
+  .stage{padding:18px 12px}
+  textarea,.dropzone{width:100%}
+  .controlbar{flex-wrap:wrap}
+  .timer{margin-left:auto}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">会話補助</div>
+    <div class="spacer"></div>
+    <button class="btn ghost hidden" id="resetBtn">最初から</button>
+  </header>
+
+  <main>
+    <section id="wizard" class="wizard">
+      <div class="steps">
+        <span id="st1" class="active">1 モード</span><span>→</span>
+        <span id="st2">2 事前情報</span><span>→</span>
+        <span id="st3">3 開始</span>
+      </div>
+
+      <section id="step1" class="stage">
+        <h1>どの場面で使いますか？</h1>
+        <p class="lead">モードごとに、会話中に見る画面そのものが変わります。</p>
+
+        <div class="mode-list">
+          <button class="mode" data-mode="general">
+            <strong>汎用会話</strong>
+            <small>会議・相談・打ち合わせ向け。</small>
+            <span class="mode-preview">決定事項 / 未解決 / 次アクションを中心に表示</span>
+          </button>
+          <button class="mode" data-mode="interview_answer">
+            <strong>面接回答</strong>
+            <small>自分が回答する面接向け。</small>
+            <span class="mode-preview">質問 / 回答の骨子 / 使える実績 / 回答例</span>
+          </button>
+          <button class="mode" data-mode="interviewer">
+            <strong>面接官</strong>
+            <small>候補者を評価・深掘りする場面向け。</small>
+            <span class="mode-preview">主張整理 / 深掘り質問 / 未確認項目 / 矛盾</span>
+          </button>
+          <button class="mode" data-mode="ideation">
+            <strong>アイデア出し</strong>
+            <small>ブレスト・企画会議向け。</small>
+            <span class="mode-preview">アイデアを自動分類し、ツリーで整理</span>
+          </button>
+          <button class="mode" data-mode="presentation">
+            <strong>プレゼン</strong>
+            <small>資料を見ながら話す場面向け。</small>
+            <span class="mode-preview">現在スライド / 言い漏れ / 次に話す内容 / 場繋ぎ</span>
+          </button>
+        </div>
+
+        <div class="stage-actions">
+          <button id="next1" class="btn primary" disabled>次へ</button>
+        </div>
+      </section>
+
+      <section id="step2" class="stage hidden">
+        <h1 id="contextTitle">事前情報を入れる</h1>
+        <p class="lead" id="contextLead">会話中の支援に使う前提情報を入れます。空でも開始できます。</p>
+
+        <div class="input-tabs">
+          <button class="input-tab active" data-tab="text">テキスト</button>
+          <button class="input-tab" data-tab="file">ファイル</button>
+        </div>
+
+        <div id="textPane">
+          <textarea id="contextText" placeholder="議題、相手の情報、自分の経歴、確認したいことなど"></textarea>
+        </div>
+        <div id="filePane" class="hidden">
+          <label class="dropzone" for="fileInput">
+            <div>
+              <strong id="filePrompt">txt / md ファイルを選択</strong>
+              <small>クリックして選択</small>
+              <div class="file-pill hidden" id="filePill"></div>
+            </div>
+          </label>
+          <input id="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown">
+        </div>
+
+        <div class="stage-actions split">
+          <button class="btn" id="back1">戻る</button>
+          <button class="btn primary" id="next2">次へ</button>
+        </div>
+      </section>
+
+      <section id="step3" class="stage hidden">
+        <h1>開始する</h1>
+        <p class="lead">開始後は、録音操作とモード専用の支援ダッシュボードだけを表示します。</p>
+        <dl class="review">
+          <dt>モード</dt><dd id="reviewMode">—</dd>
+          <dt>事前情報</dt><dd id="reviewContext">なし</dd>
+        </dl>
+        <div class="stage-actions split">
+          <button class="btn" id="back2">戻る</button>
+          <button class="btn primary" id="startBtn">会話を開始</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="session" class="hidden">
+      <div class="session-head">
+        <h1>会話中</h1>
+        <span class="mode-label" id="modeLabel"></span>
+        <div class="spacer"></div>
+        <button class="btn danger" id="endBtn">終了</button>
+      </div>
+
+      <div class="controlbar">
+        <button id="recordToggle" class="btn primary main-control">録音開始</button>
+        <div class="session-state" id="sessionState">待機中</div>
+        <div class="timer" id="timer">00:00</div>
+      </div>
+
+      <div id="dashboard"></div>
+    </section>
+  </main>
+</div>
+
+<div id="dialogBg" class="dialog-bg hidden">
+  <div class="dialog">
+    <h2 id="dialogTitle">会話履歴</h2>
+    <div id="dialogBody"></div>
+    <div class="dialog-actions">
+      <button class="btn" id="closeDialog">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const names = {
+    general:"汎用会話",
+    interview_answer:"面接回答",
+    interviewer:"面接官",
+    ideation:"アイデア出し",
+    presentation:"プレゼン"
+  };
+
+  let mode = "";
+  let recordState = "idle"; // idle | recording | paused
+  let seconds = 0;
+  let timerId = null;
+
+  const $ = q => document.querySelector(q);
+  const $$ = q => [...document.querySelectorAll(q)];
+
+  const recentTranscript = `
+    <div class="transcript-row"><span class="speaker">相手</span><span>今回の企画で一番重視しているポイントは何ですか？</span></div>
+    <div class="transcript-row"><span class="speaker">自分</span><span>使いやすさと、会話中に必要な情報へすぐアクセスできることです。</span></div>
+  `;
+
+  function miniTranscript(){
+    return `
+      <div class="transcript-mini">
+        <div class="transcript-head">
+          <strong>直近の会話</strong>
+          <button class="showTranscript">履歴を見る</button>
+        </div>
+        ${recentTranscript}
+        <div class="manual">
+          <input class="manualInput" placeholder="認識できなかった発言を手入力">
+          <button class="btn addManual">追加</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGeneral(){
+    return `
+      <div class="dashboard">
+        <div class="primary-zone">
+          <div class="block emphasis">
+            <div class="block-title">今、次にやること</div>
+            <p class="big-copy">利用者と利用場面を具体化して、誰がどのタイミングで何を見るのかを決める。</p>
+          </div>
+
+          <div class="two-col">
+            <div class="block">
+              <div class="block-title">決定事項</div>
+              <ul class="clean">
+                <li>会話中は支援情報を主役にする</li>
+                <li>履歴は補助情報として小さく扱う</li>
+              </ul>
+            </div>
+            <div class="block">
+              <div class="block-title">未解決</div>
+              <ul class="clean">
+                <li>誰が主利用者か</li>
+                <li>どの支援を最優先するか</li>
+              </ul>
+            </div>
+          </div>
+
+          ${miniTranscript()}
+        </div>
+
+        <aside class="side-zone">
+          <div class="block subtle">
+            <div class="block-title">要約</div>
+            <p class="mid-copy">会話補助では、履歴を見ることよりも、その瞬間に必要な判断材料が見えることを重視している。</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">疑問点</div>
+            <p class="mid-copy">この会議の最終的なゴールは、仕様決定か、方向性合意か。</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">次のアクション</div>
+            <ul class="clean">
+              <li>利用者を1人に絞る</li>
+              <li>会話後に必要な成果物を決める</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    `;
+  }
+
+  function renderInterviewAnswer(){
+    return `
+      <div class="dashboard">
+        <div class="primary-zone">
+          <div class="block emphasis">
+            <div class="block-title">今の質問</div>
+            <div class="question-box">「あなたがこの仕事で一番成果を出した経験を教えてください」</div>
+          </div>
+
+          <div class="block">
+            <div class="block-title">回答の骨子</div>
+            <div class="answer-steps">
+              <div class="answer-step"><b>1 結論</b><span>何を達成したかを一文で</span></div>
+              <div class="answer-step"><b>2 具体例</b><span>自分が担った範囲と行動</span></div>
+              <div class="answer-step"><b>3 接続</b><span>応募先でどう活かすか</span></div>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="block subtle">
+              <div class="block-title">事前情報から使える実績</div>
+              <p class="mid-copy">社内業務の自動化で、月20時間分の手作業を削減した経験。</p>
+            </div>
+            <div class="block subtle">
+              <div class="block-title">回答で抜けていること</div>
+              <p class="mid-copy">成果の数字と、自分の判断理由。</p>
+            </div>
+          </div>
+
+          ${miniTranscript()}
+        </div>
+
+        <aside class="side-zone">
+          <div class="block subtle">
+            <div class="block-title">回答例</div>
+            <p class="mid-copy">「最も成果を出したのは、社内業務の自動化です。私は要件整理から実装まで担当し…」</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">話し方の注意</div>
+            <ul class="clean">
+              <li>結論を先に言う</li>
+              <li>1分以内を目安にする</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    `;
+  }
+
+  function renderInterviewer(){
+    return `
+      <div class="dashboard">
+        <div class="primary-zone">
+          <div class="block emphasis">
+            <div class="block-title">候補者の主張</div>
+            <p class="big-copy">「チームの改善提案を主導し、業務効率を上げた」</p>
+          </div>
+
+          <div class="block">
+            <div class="block-title">今すぐ深掘りする質問</div>
+            <div class="deep-question"><span class="qnum">1</span><div>「主導した」とありますが、具体的にどこまでを本人が担当しましたか？</div></div>
+            <div class="deep-question"><span class="qnum">2</span><div>改善前後で、何がどの程度変わりましたか？</div></div>
+            <div class="deep-question"><span class="qnum">3</span><div>反対意見が出たとき、どのように合意形成しましたか？</div></div>
+          </div>
+
+          ${miniTranscript()}
+        </div>
+
+        <aside class="side-zone">
+          <div class="block subtle">
+            <div class="block-title">まだ確認できていない評価軸</div>
+            <ul class="clean">
+              <li>再現性</li>
+              <li>本人の意思決定</li>
+              <li>失敗時の対応</li>
+            </ul>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">曖昧・矛盾</div>
+            <p class="mid-copy">「チームで決めた」と「自分が主導した」の境界が不明。</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">次の観察ポイント</div>
+            <p class="mid-copy">結果ではなく、判断プロセスを具体的に説明できるか。</p>
+          </div>
+        </aside>
+      </div>
+    `;
+  }
+
+  function renderIdeation(){
+    return `
+      <div class="dashboard">
+        <div class="primary-zone">
+          <div class="idea-board">
+            <div class="idea-root">会話補助を使いやすくする</div>
+            <div class="idea-columns">
+              <div class="idea-group">
+                <h3>表示</h3>
+                <div class="idea-node">支援情報を中央に出す<span class="idea-tag">優先度 高</span></div>
+                <div class="idea-node related">履歴は小さくする<span class="idea-tag">関連案</span></div>
+                <div class="idea-node">場面ごとに画面を変える</div>
+              </div>
+              <div class="idea-group">
+                <h3>操作</h3>
+                <div class="idea-node">録音ボタンを1つにする<span class="idea-tag">優先度 高</span></div>
+                <div class="idea-node">一時停止→再開を同じ場所で</div>
+                <div class="idea-node related">終了は別操作に分ける</div>
+              </div>
+              <div class="idea-group">
+                <h3>支援内容</h3>
+                <div class="idea-node">3秒停止で次の言葉</div>
+                <div class="idea-node">5秒沈黙で場繋ぎ</div>
+                <div class="idea-node related">モード別の専用表示</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="block subtle">
+              <div class="block-title">似ている案</div>
+              <p class="mid-copy">「履歴を小さくする」と「支援情報を中央に出す」は同じ方向なので統合候補。</p>
+            </div>
+            <div class="block subtle">
+              <div class="block-title">次に広げる問い</div>
+              <p class="mid-copy">会議中に“絶対に見逃したくない情報”は何か？</p>
+            </div>
+          </div>
+
+          ${miniTranscript()}
+        </div>
+
+        <aside class="side-zone">
+          <div class="block subtle">
+            <div class="block-title">自動分類</div>
+            <ul class="clean">
+              <li>表示 3件</li>
+              <li>操作 3件</li>
+              <li>支援内容 3件</li>
+            </ul>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">評価軸</div>
+            <ul class="clean">
+              <li>会話中に迷わない</li>
+              <li>視線移動が少ない</li>
+              <li>判断に直接役立つ</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    `;
+  }
+
+  function renderPresentation(){
+    return `
+      <div class="dashboard">
+        <div class="primary-zone">
+          <div class="slide-area">
+            <div class="slide-preview">
+              <div class="slide-num">4 / 12</div>
+              <h3>提案する仕組み</h3>
+              <ul>
+                <li>会話をリアルタイム認識</li>
+                <li>状況に合わせて支援内容を更新</li>
+                <li>会話後は議事録として保存</li>
+              </ul>
+            </div>
+
+            <div>
+              <div class="block emphasis">
+                <div class="block-title">今、このスライドで話すこと</div>
+                <p class="big-copy">「履歴を見るためのツールではなく、その瞬間に必要な支援を出すツール」であることを明確にする。</p>
+              </div>
+              <div class="block subtle">
+                <div class="block-title">言い漏れ</div>
+                <ul class="clean">
+                  <li>3秒停止で「次の言葉」を更新</li>
+                  <li>5秒沈黙で場繋ぎを生成</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="slide-progress">
+            <span class="done"></span><span class="done"></span><span class="done"></span><span class="current"></span><span></span>
+          </div>
+
+          ${miniTranscript()}
+        </div>
+
+        <aside class="side-zone">
+          <div class="block subtle">
+            <div class="block-title">次のスライド</div>
+            <p class="mid-copy">モード別に変わる支援画面</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">次に話す一文</div>
+            <p class="mid-copy">「ここからは、実際の利用場面ごとに画面がどう変わるかを見せます。」</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">場繋ぎ</div>
+            <p class="mid-copy">「少し整理すると、ポイントは表示する情報の優先順位です。」</p>
+          </div>
+        </aside>
+      </div>
+    `;
+  }
+
+  function renderDashboard(){
+    const renderer = {
+      general: renderGeneral,
+      interview_answer: renderInterviewAnswer,
+      interviewer: renderInterviewer,
+      ideation: renderIdeation,
+      presentation: renderPresentation
+    }[mode] || renderGeneral;
+
+    $("#dashboard").innerHTML = renderer();
+
+    $$(".showTranscript").forEach(btn => btn.onclick = showFullTranscript);
+    $$(".addManual").forEach(btn => {
+      btn.onclick = () => {
+        const input = btn.parentElement.querySelector(".manualInput");
+        const value = input.value.trim();
+        if(!value) return;
+        const row = document.createElement("div");
+        row.className = "transcript-row";
+        row.innerHTML = '<span class="speaker">手入力</span><span></span>';
+        row.lastElementChild.textContent = value;
+        btn.closest(".transcript-mini").insertBefore(row, btn.parentElement);
+        input.value = "";
+      };
+    });
+  }
+
+  function showStep(n){
+    [1,2,3].forEach(i => $("#step"+i).classList.toggle("hidden", i!==n));
+    [1,2,3].forEach(i => {
+      $("#st"+i).classList.toggle("active", i===n);
+      $("#st"+i).classList.toggle("done", i<n);
+    });
+  }
+
+  $$(".mode").forEach(el => {
+    el.onclick = () => {
+      $$(".mode").forEach(x => x.classList.remove("selected"));
+      el.classList.add("selected");
+      mode = el.dataset.mode;
+      $("#next1").disabled = false;
+    };
+  });
+
+  $("#next1").onclick = () => {
+    const pres = mode === "presentation";
+    $("#contextTitle").textContent = pres ? "資料を読み込む" : "事前情報を入れる";
+    $("#contextLead").textContent = pres
+      ? "発表資料を読み込みます。必要ならテキストでも補足できます。"
+      : "会話中の支援に使う前提情報を入れます。空でも開始できます。";
+    $("#filePrompt").textContent = pres ? "pptx / pdf ファイルを選択" : "txt / md ファイルを選択";
+    $("#fileInput").accept = pres
+      ? ".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      : ".txt,.md,text/plain,text/markdown";
+    showStep(2);
+  };
+
+  $("#back1").onclick = () => showStep(1);
+  $("#back2").onclick = () => showStep(2);
+
+  $$(".input-tab").forEach(tab => {
+    tab.onclick = () => {
+      $$(".input-tab").forEach(x => x.classList.remove("active"));
+      tab.classList.add("active");
+      const text = tab.dataset.tab === "text";
+      $("#textPane").classList.toggle("hidden", !text);
+      $("#filePane").classList.toggle("hidden", text);
+    };
+  });
+
+  $("#fileInput").onchange = e => {
+    const f = e.target.files[0];
+    $("#filePill").classList.toggle("hidden", !f);
+    $("#filePill").textContent = f ? f.name : "";
+  };
+
+  $("#next2").onclick = () => {
+    $("#reviewMode").textContent = names[mode];
+    const f = $("#fileInput").files[0];
+    const t = $("#contextText").value.trim();
+    $("#reviewContext").textContent = f ? f.name : (t ? "テキスト入力あり" : "なし");
+    showStep(3);
+  };
+
+  $("#startBtn").onclick = async () => {
+    $("#wizard").classList.add("hidden");
+    $("#session").classList.remove("hidden");
+    $("#resetBtn").classList.remove("hidden");
+    $("#modeLabel").textContent = names[mode];
+    renderDashboard();
+
+    if(navigator.mediaDevices?.getUserMedia){
+      try{
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        stream.getTracks().forEach(t => t.stop());
+        $("#sessionState").textContent = "マイク使用可";
+      }catch{
+        $("#sessionState").textContent = "マイク権限なし";
+      }
+    }
+  };
+
+  function drawTimer(){
+    const m = String(Math.floor(seconds/60)).padStart(2,"0");
+    const s = String(seconds%60).padStart(2,"0");
+    $("#timer").textContent = `${m}:${s}`;
+  }
+
+  function setRecordState(next){
+    recordState = next;
+    clearInterval(timerId);
+
+    if(next === "recording"){
+      $("#recordToggle").textContent = "一時停止";
+      $("#recordToggle").classList.add("primary");
+      $("#sessionState").textContent = "録音中";
+      timerId = setInterval(() => { seconds++; drawTimer(); },1000);
+    }else if(next === "paused"){
+      $("#recordToggle").textContent = "録音を再開";
+      $("#recordToggle").classList.add("primary");
+      $("#sessionState").textContent = "一時停止";
+    }else{
+      $("#recordToggle").textContent = "録音開始";
+      $("#recordToggle").classList.add("primary");
+      $("#sessionState").textContent = "待機中";
+    }
+  }
+
+  $("#recordToggle").onclick = () => {
+    if(recordState === "idle") setRecordState("recording");
+    else if(recordState === "recording") setRecordState("paused");
+    else if(recordState === "paused") setRecordState("recording");
+  };
+
+  function showFullTranscript(){
+    $("#dialogTitle").textContent = "会話履歴";
+    $("#dialogBody").innerHTML = `
+      <div class="transcript-row"><span class="speaker">相手</span><span>まず、今回の会議の目的を確認したいです。</span></div>
+      <div class="transcript-row"><span class="speaker">自分</span><span>会話補助のUIを、実際の利用に耐える形に整理することです。</span></div>
+      <div class="transcript-row"><span class="speaker">相手</span><span>今回の企画で一番重視しているポイントは何ですか？</span></div>
+      <div class="transcript-row"><span class="speaker">自分</span><span>使いやすさと、会話中に必要な情報へすぐアクセスできることです。</span></div>
+    `;
+    $("#dialogBg").classList.remove("hidden");
+  }
+
+  $("#closeDialog").onclick = () => $("#dialogBg").classList.add("hidden");
+  $("#endBtn").onclick = () => {
+    $("#dialogTitle").textContent = "会話を終了";
+    $("#dialogBody").innerHTML = "<p class='mid-copy'>終了後は議事録の確認・保存へ進む想定です。</p>";
+    $("#dialogBg").classList.remove("hidden");
+  };
+  $("#resetBtn").onclick = () => location.reload();
+})();
+</script>
+</body>
+</html>

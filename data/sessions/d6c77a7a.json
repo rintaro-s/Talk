@@ -1,0 +1,20 @@
+{
+  "id": "d6c77a7a",
+  "mode": "presentation",
+  "title": "2026-08-26 03:10 のセッション",
+  "created_at": 1787681444.0681005,
+  "updated_at": 1787681444.0732126,
+  "utterances": [
+    {
+      "speaker": "自分",
+      "text": "提案の背景です",
+      "timestamp": 1787681444.0730987
+    }
+  ],
+  "minutes": "",
+  "presentation": {
+    "document": "# 提案\n- ポイントA\n- ポイントB\n\n---\n\n# まとめ\n- 結論",
+    "script": "提案の背景を説明する\nポイントAの詳細\nポイントBの詳細\nまとめ",
+    "covered": []
+  }
+}
