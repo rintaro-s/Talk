@@ -10,6 +10,7 @@ class TalkAssistClient(
     private val onStatusChange: (String) -> Unit,
     private val onPartial: (String) -> Unit,
     private val onFinal: (String) -> Unit,
+    private val onPresentationNav: (JSONObject) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -36,6 +37,7 @@ class TalkAssistClient(
                         "partial" -> onPartial(json.optString("text", ""))
                         "final" -> onFinal(json.optString("text", ""))
                         "transcript" -> onStatusChange("${json.optString("speaker")}: 送信済み")
+                        "presentation_nav" -> onPresentationNav(json)
                         "error" -> onError(json.optString("message", "不明なエラー"))
                         "pong" -> { /* no-op */ }
                     }

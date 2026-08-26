@@ -129,7 +129,29 @@ def get_minutes_prompt(mode: str, knowledge: str) -> str:
 
 
 def parse_presentation_document(text: str) -> List[Dict]:
-    """資料テキストをセクションに分割する"""
+    """資料テキストをスライドに分割する（--- または # 見出しで区切る）"""
+    raw = text.replace("\r\n", "\n")
+    blocks = [b.strip() for b in re.split(r"^---\s*$", raw, flags=re.MULTILINE) if b.strip()]
+    if len(blocks) > 1:
+        sections = []
+        for i, block in enumerate(blocks, 1):
+            lines = block.splitlines()
+            title = ""
+            body_lines = []
+            for line in lines:
+                line = line.rstrip()
+                if not line.strip():
+                    continue
+                if line.startswith("#") and not title:
+                    title = line.lstrip("#").strip()
+                else:
+                    body_lines.append(line)
+            sections.append({
+                "title": title or f"スライド {i}",
+                "body": "\n".join(body_lines).strip(),
+            })
+        return sections
+
     sections = []
     current = {"title": "", "body": []}
     for line in text.splitlines():
@@ -137,7 +159,7 @@ def parse_presentation_document(text: str) -> List[Dict]:
         if not line.strip():
             continue
         if line.startswith("#"):
-            if current["body"]:
+            if current["body"] or current["title"]:
                 sections.append({
                     "title": current["title"],
                     "body": "\n".join(current["body"]).strip(),
@@ -165,3 +187,21 @@ def parse_presentation_script(text: str) -> List[str]:
         if line:
             lines.append(line)
     return lines
+
+
+def parse_presentation_script_per_slide(text: str) -> List[List[str]]:
+    """カンペをスライドごとに分割する（--- で区切る）"""
+    slides = []
+    current = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line == "---":
+            slides.append(current)
+            current = []
+        elif line:
+            current.append(line)
+    if current:
+        slides.append(current)
+    if not slides:
+        return [[]]
+    return slides

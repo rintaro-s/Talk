@@ -26,6 +26,8 @@ const state = {
   timerId: null,
   transcript: [],
   presentationSlides: [],
+  currentSlideIndex: 0,
+  lastAssist: null,
 };
 
 const $ = (q) => document.querySelector(q);
@@ -128,7 +130,8 @@ function setupWizard() {
         return;
       }
       state.presentationSlides = parseSlides(doc);
-      $("#reviewContext").textContent = `資料 ${state.presentationSlides.length} 枚 / カンペ ${script.split("\n").filter((l) => l.trim()).length} 行`;
+      const scriptSlides = parsePresentationScriptPerSlide(script);
+      $("#reviewContext").textContent = `資料 ${state.presentationSlides.length} 枚 / カンペ ${scriptSlides.length} スライド分`;
     } else {
       const f = $("#fileInput").files[0];
       const t = $("#contextText").value.trim();
@@ -144,8 +147,23 @@ function setupWizard() {
 function parseSlides(text) {
   const raw = text.replace(/\r\n/g, "\n");
   const blocks = raw.split(/^---\s*$/m).map((s) => s.trim()).filter(Boolean);
+  const parseBlock = (body, i) => {
+    const lines = body.split("\n");
+    let title = "";
+    const bodyLines = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("#") && !title) {
+        title = trimmed.replace(/^#+\s*/, "");
+      } else {
+        bodyLines.push(trimmed);
+      }
+    }
+    return { title: title || `スライド ${i + 1}`, body: bodyLines.join("\n") };
+  };
   if (blocks.length > 1) {
-    return blocks.map((body, i) => ({ title: `スライド ${i + 1}`, body }));
+    return blocks.map(parseBlock);
   }
   const lines = text.split("\n");
   const slides = [];
@@ -169,6 +187,10 @@ function parseSlides(text) {
     slides.push({ title: "資料", body: text.trim() });
   }
   return slides;
+}
+
+function parsePresentationScriptPerSlide(text) {
+  return text.split(/^---\s*$/m).map((s) => s.trim()).filter(Boolean);
 }
 
 // ---------- session ----------
@@ -197,13 +219,15 @@ async function startSession() {
   }
 
   if (state.mode === "presentation") {
-    await api(`/api/session/${session.id}/presentation`, {
+    const pres = await api(`/api/session/${session.id}/presentation`, {
       method: "POST",
       body: {
         document: $("#presentationDocument").value,
         script: $("#presentationScript").value,
       },
     });
+    state.presentationSlides = pres.slides || state.presentationSlides;
+    state.currentSlideIndex = 0;
   }
 
   $("#setup").classList.add("hidden");
@@ -211,9 +235,18 @@ async function startSession() {
   $("#modeLabel").textContent = MODE_NAMES[state.mode];
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  $("#serverUrl").textContent = `${proto}//${location.host}`;
+  const serverUrl = `${proto}//${location.host}`;
+  $("#serverUrl").textContent = serverUrl;
   $("#sessionIdDisplay").textContent = session.id;
   $("#connectionInfo").classList.remove("hidden");
+  $("#copyServerUrl").onclick = () => navigator.clipboard.writeText(serverUrl);
+  $("#copySessionId").onclick = () => navigator.clipboard.writeText(session.id);
+  if (typeof QRCode !== "undefined") {
+    const qrUrl = `${serverUrl}/ws/session/${session.id}`;
+    QRCode.toCanvas($("#qrCode"), qrUrl, { width: 160, margin: 2 }, (err) => {
+      if (err) console.error("QR code generation failed:", err);
+    });
+  }
 
   state.transcript = [];
   renderDashboard();
@@ -269,6 +302,9 @@ function connectSocket() {
 
   ws.onopen = () => {
     $("#sessionState").textContent = state.micOn ? "録音中" : "接続済み";
+    if (state.mode === "presentation" && state.presentationSlides.length > 0) {
+      state.ws.send(JSON.stringify({ type: "slide_change", index: state.currentSlideIndex }));
+    }
   };
 
   ws.onmessage = (event) => {
@@ -330,6 +366,17 @@ function bindDashboardEvents() {
       input.value = "";
     };
   });
+  $("#prevSlide")?.addEventListener("click", () => changeSlide(-1));
+  $("#nextSlide")?.addEventListener("click", () => changeSlide(1));
+}
+
+function changeSlide(delta) {
+  const newIndex = state.currentSlideIndex + delta;
+  if (newIndex < 0 || newIndex >= state.presentationSlides.length) return;
+  state.currentSlideIndex = newIndex;
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "slide_change", index: newIndex }));
+  }
 }
 
 function miniTranscript() {
@@ -527,34 +574,52 @@ function renderIdeation(data = {}) {
 }
 
 function renderPresentation(data = {}) {
-  const ms = data.mode_specific || {};
-  const currentTopic = ms.current_topic || "会話を開始してください";
-  const nextScript = ms.next_script || "";
+  const ms = data.mode_specific || state.lastAssist?.mode_specific || {};
+  const slide = state.presentationSlides[state.currentSlideIndex] || { title: "", body: "" };
+  const script = ms.script || [];
   const missing = ms.missing || [];
+  const covered = ms.covered || [];
+  const nextScript = ms.next_script || "";
   const filler = ms.filler || "";
-  const currentSlide = ms.current_slide || "";
 
-  const slide = state.presentationSlides[0] || { title: "資料", body: "" };
+  const scriptHtml = script.map((line) => {
+    const isMissing = missing.some((m) => line.includes(m) || m.includes(line));
+    const isCovered = covered.some((c) => line.includes(c) || c.includes(line));
+    let cls = "script-line";
+    if (isMissing) cls += " missing";
+    else if (isCovered) cls += " covered";
+    return `<li class="${cls}">${escapeHtml(line)}</li>`;
+  }).join("");
 
   return `
-    <div class="dashboard">
+    <div class="dashboard presentation-dashboard">
       <div class="primary-zone">
+        <div class="slide-controls">
+          <button class="btn" id="prevSlide" ${state.currentSlideIndex <= 0 ? "disabled" : ""}>前へ</button>
+          <span class="slide-counter" id="slideCounter">${state.currentSlideIndex + 1} / ${state.presentationSlides.length}</span>
+          <button class="btn" id="nextSlide" ${state.currentSlideIndex >= state.presentationSlides.length - 1 ? "disabled" : ""}>次へ</button>
+        </div>
+
         <div class="slide-area">
           <div class="slide-preview">
-            <div class="slide-num" id="slideNum">${escapeHtml(currentSlide || slide.title)}</div>
-            <h3 id="slideTitle">${escapeHtml(currentTopic || slide.title)}</h3>
-            <ul id="slidePoints">${missing.map((m) => `<li>${escapeHtml(m)}</li>`).join("") || "<li>言い漏れはありません</li>"}</ul>
+            <div class="slide-num" id="slideTitle">${escapeHtml(slide.title || `スライド ${state.currentSlideIndex + 1}`)}</div>
+            <pre class="slide-body">${escapeHtml(slide.body || "")}</pre>
           </div>
 
-          <div>
-            <div class="block emphasis">
-              <div class="block-title">今、このスライドで話すこと</div>
-              <p class="big-copy" id="currentTopic">${escapeHtml(currentTopic)}</p>
-            </div>
-            <div class="block subtle">
-              <div class="block-title">言い漏れ</div>
-              <ul class="clean" id="missing">${missing.map((m) => `<li>${escapeHtml(m)}</li>`).join("") || "<li>—</li>"}</ul>
-            </div>
+          <div class="script-panel">
+            <div class="block-title">カンペ</div>
+            <ul class="script-list" id="scriptList">${scriptHtml || "<li>—</li>"}</ul>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="block emphasis">
+            <div class="block-title">次に話す</div>
+            <p class="big-copy" id="nextScript">${escapeHtml(nextScript || "—")}</p>
+          </div>
+          <div class="block subtle">
+            <div class="block-title">場繋ぎ</div>
+            <p class="mid-copy" id="filler">${escapeHtml(filler || "—")}</p>
           </div>
         </div>
 
@@ -563,12 +628,8 @@ function renderPresentation(data = {}) {
 
       <aside class="side-zone">
         <div class="block subtle">
-          <div class="block-title">次に話す一文</div>
-          <p class="mid-copy" id="nextScript">${escapeHtml(nextScript || "—")}</p>
-        </div>
-        <div class="block subtle">
-          <div class="block-title">場繋ぎ</div>
-          <p class="mid-copy" id="filler">${escapeHtml(filler || "—")}</p>
+          <div class="block-title">言い漏れ</div>
+          <ul class="clean" id="missing">${missing.map((m) => `<li>${escapeHtml(m)}</li>`).join("") || "<li>—</li>"}</ul>
         </div>
       </aside>
     </div>
@@ -577,6 +638,7 @@ function renderPresentation(data = {}) {
 
 function renderAssist(data) {
   setLoading(false);
+  state.lastAssist = data;
   const renderer = {
     general: renderGeneral,
     interviewer: renderInterviewer,
@@ -589,23 +651,10 @@ function renderAssist(data) {
 }
 
 function renderPresentationNav(data) {
-  if (data.current_topic && $("#currentTopic")) {
-    $("#currentTopic").textContent = data.current_topic;
-    $("#slideTitle").textContent = data.current_topic;
+  if (data.current_slide_index !== undefined) {
+    state.currentSlideIndex = data.current_slide_index;
   }
-  if (data.current_slide && $("#slideNum")) {
-    $("#slideNum").textContent = data.current_slide;
-  }
-  if (data.missing && $("#missing")) {
-    $("#missing").innerHTML = data.missing.map((m) => `<li>${escapeHtml(m)}</li>`).join("");
-    $("#slidePoints").innerHTML = data.missing.map((m) => `<li>${escapeHtml(m)}</li>`).join("");
-  }
-  if (data.next_script && $("#nextScript")) {
-    $("#nextScript").textContent = data.next_script;
-  }
-  if (data.filler && $("#filler")) {
-    $("#filler").textContent = data.filler;
-  }
+  renderPresentation({ mode_specific: data });
 }
 
 function showSuggestion(text) {

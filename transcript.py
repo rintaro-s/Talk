@@ -25,7 +25,14 @@ def create_session(mode: str, title: Optional[str] = None) -> dict:
         "updated_at": time.time(),
         "utterances": [],
         "minutes": "",
-        "presentation": {"document": "", "script": "", "covered": []},
+        "presentation": {
+            "document": "",
+            "script": "",
+            "slides": [],
+            "script_per_slide": [],
+            "current_slide_index": 0,
+            "covered": [],
+        },
     }
     save_session(session)
     return session
@@ -45,9 +52,17 @@ def load_session(session_id: str) -> Optional[dict]:
         return None
     try:
         with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            session = json.load(f)
     except Exception:
         return None
+    pres = session.setdefault("presentation", {})
+    pres.setdefault("document", "")
+    pres.setdefault("script", "")
+    pres.setdefault("slides", [])
+    pres.setdefault("script_per_slide", [])
+    pres.setdefault("current_slide_index", 0)
+    pres.setdefault("covered", [])
+    return session
 
 
 def save_session(session: dict):

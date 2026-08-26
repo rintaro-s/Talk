@@ -9,7 +9,7 @@
 - **汎用会話**：要約、決定事項、未解決事項、次のアクション、疑問点の提示
 - **面接官**：候補者の主張整理、深掘り質問、評価軸、曖昧さ・矛盾の指摘
 - **アイデア出し**：アイデアの自動分類・ツリー化、類似案の指摘、次に広げる問い
-- **プレゼン**：資料とカンペを事前読み込み、現在のトピック、言い漏れ、次の文書、場繋ぎ生成
+- **プレゼン**：資料とカンペを事前読み込み。スライドは「前へ/次へ」ボタンで操作。カンペは発話履歴と比較し、ページめくり時に LLM で言い漏れを判定して横に表示。次の一文・場繋ぎも生成
 
 ### 共通機能
 
@@ -24,7 +24,7 @@
 1. **モード選択**：4 つのモードから選択
 2. **事前情報入力**：
    - 汎用会話 / 面接官 / アイデア出し：テキストまたは txt/md ファイル
-   - プレゼン：資料テキスト（必須）＋ カンペ（必須）。`---` 区切りまたは `# 見出し` でスライドを自動分割。txt/md ファイルから読み込み可能
+   - プレゼン：資料テキスト（必須）＋ カンペ（必須）。資料は `---` 区切りまたは `# 見出し` でスライドを自動分割。カンペは `---` 区切りで各スライドを紐付けるか、`---` がなければ LLM で資料スライドに自動割り当てする。txt/md ファイルから読み込み可能
 3. **会話中**：録音ボタンで音声入力開始。モード別ダッシュボードがリアルタイム更新
 4. **議事録**：「終了」ボタンで議事録生成画面に遷移。コピー・ダウンロード・最初からが可能
 
@@ -40,6 +40,8 @@
 │  Wear OS watch  │  (PCM audio / Vosk)  │  LLM (Ollama)   │
 │  (マイク送信)    │◄────────────────────►│                 │
 └─────────────────┘                      └─────────────────┘
+       ▲                                          │
+       └────────── UDP ブロードキャスト ──────────┘
 
 ┌─────────────────┐      WebSocket       
 │  Quest 2        │  (assist 表示のみ)   
@@ -144,8 +146,16 @@ cd /mnt/github/Talk
 
 - サーバーアドレス：例 `ws://192.168.1.10:8000`
 - セッション ID：例 `a1b2c3d4`
+- QR コード：`ws://.../ws/session/<ID>` 形式の接続 URL
 
-同一 LAN 内の Watch / VR クライアントからこれらを入力して接続する。
+同一 LAN 内では、Watch / VR クライアントが UDP ブロードキャスト（ポート 5000）でサーバーとセッション ID を自動検知する。自動検知が機能しない場合は、QR コード読み取り（対応クライアント）または画面上の接続情報をコピーして手動入力する。
+
+### 自動検出の流れ
+
+1. ブラウザで「会話を開始」を押すと、サーバーが LAN 内に UDP ブロードキャストを送信する
+2. Watch / VR_common アプリを起動すると自動的に検出を開始する
+3. 検出結果がリストで表示されたら、接続したいセッションをタップする
+4. 自動検出しない場合は「手動で接続」をタップし、`ws://<IP>:8000/ws/session/<ID>` 形式の URL を入力する
 
 ### spice/watch（Wear OS マイクアプリ）
 
@@ -181,6 +191,7 @@ cd spice/watch
 
 - `RECORD_AUDIO`：マイク録音に必要
 - `INTERNET`：サーバー通信に必要
+- `ACCESS_WIFI_STATE`：UDP ブロードキャスト受信に必要
 - `WAKE_LOCK`：Wear OS 用に既定で追加
 
 初回起動時にマイク権限を許可する必要がある。
@@ -188,11 +199,12 @@ cd spice/watch
 #### 使い方
 
 1. アプリを起動
-2. サーバーアドレスに `ws://<サーバーIP>:8000` を入力
-3. セッション ID をブラウザからコピーして入力
-4. 「接続」をタップ
-5. 「録音開始」をタップして発話
-6. 「録音停止」をタップして確定
+2. 初回はマイク権限を許可する
+3. 起動すると自動的にサーバー検出を開始する
+4. 検出結果がリストに表示されたらタップして接続
+5. 検出しない場合は「手動で接続」をタップし、`ws://<IP>:8000/ws/session/<ID>` 形式の URL を入力して「接続」をタップ
+6. 「録音開始」をタップして発話
+7. 「録音停止」をタップして確定
 
 ### spice/vr_common（Meta Quest 2 表示クライアント）
 
@@ -238,9 +250,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 #### 使い方
 
 1. アプリを起動
-2. サーバーアドレスに `ws://<サーバーIP>:8000` を入力
-3. セッション ID をブラウザからコピーして入力
-4. 「接続」をタップ
+2. 起動すると自動的にサーバー検出を開始する
+3. 検出結果がリストに表示されたらタップして接続
+4. 検出しない場合は「手動で接続」をタップし、`ws://<IP>:8000/ws/session/<ID>` 形式の URL を入力して「接続」をタップ
 5. ブラウザで会話が進むと、タイルが自動更新される
 
 ## WebSocket プロトコル
@@ -259,6 +271,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | `pause` | client → server | 3 秒沈黙を検知。server は `suggestion` を返す |
 | `gap` | client → server | 5 秒沈黙を検知。server は `filler` を返す |
 | `assist` | client → server | 最新状態で `assist` を再計算して返す |
+| `slide_change` | client → server | プレゼンのスライドを切り替える。server は `presentation_nav` を返す |
 | `transcript` | server → client | 発言が追加された通知 |
 | `assist` | server → client | モード別支援情報、要約、次アクションなど |
 | `suggestion` | server → client | 次に話すべき一文 |
@@ -277,6 +290,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | `partial` | server → client | 認識中のテキスト |
 | `final` | server → client | 確定したテキスト |
 | `transcript` | server → client | 確定テキストがセッションに追加された通知 |
+| `presentation_nav` | server → client | プレゼンモード用ナビゲーション（現在スライド / カンペ / 言い漏れ） |
 | `assist` | server → client | セッション更新後の支援情報 |
 
 ## ファイル構成
@@ -326,6 +340,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - `data/vosk_models/` の権限を確認
 - 手動でモデルをダウンロードして展開
 
+### 外部デバイスが自動検知されない
+
+- 同一 LAN / Wi-Fi 内にあるか確認
+- ファイアウォールやルーターで UDP ブロードキャスト（ポート 5000）が遮断されていないか確認
+- 自動検知しない場合は、ブラウザの「外部デバイス接続」欄からサーバーアドレスとセッション ID をコピーして手動入力
+
 ### watch / vr_common が接続できない
 
 - サーバーアドレスが `ws://` または `wss://` で始まっているか確認
@@ -338,6 +358,14 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - 開発者モードが有効か確認
 - `adb devices` で Quest 2 が認識されるか確認
 - APK が実際に生成されているか確認
+
+### watch ビルド時に `Theme.Material3.DayNight.NoActionBar not found`
+
+`spice/watch/app/build.gradle.kts` に通常の Material3 依存 `androidx.compose.material3:material3` を追加済み。Wear OS 用 Material3 と SplashScreen テーマの親テーマを解決するため必要。
+
+### Quest 2 で接続時に `not permitted network security policy` などのエラー
+
+`spice/VR_common/app/src/main/AndroidManifest.xml` に `android:usesCleartextTraffic="true"` と `android:networkSecurityConfig="@xml/network_security_config"` を設定済み。HTTP / WebSocket（`ws://`）通信を許可するための設定。
 
 ## 注意
 

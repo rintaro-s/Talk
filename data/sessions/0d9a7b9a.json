@@ -1,0 +1,43 @@
+{
+  "id": "0d9a7b9a",
+  "mode": "presentation",
+  "title": "2026-08-26 19:18 のセッション",
+  "created_at": 1787739506.2920258,
+  "updated_at": 1787739706.6900096,
+  "utterances": [],
+  "minutes": "",
+  "presentation": {
+    "document": "# A\na\n---\n# B\nb\n---\n# C\nc",
+    "script": "名前と所属を述べる\n本日のテーマを伝える\n問題点を簡潔に\n解決策の概要\n結論を述べる\n次のアクションを提示",
+    "slides": [
+      {
+        "title": "A",
+        "body": "a"
+      },
+      {
+        "title": "B",
+        "body": "b"
+      },
+      {
+        "title": "C",
+        "body": "c"
+      }
+    ],
+    "script_per_slide": [
+      [
+        "1. 名前と所属を述べる",
+        "2. 本日のテーマを伝える"
+      ],
+      [
+        "3. 問題点を簡潔に",
+        "4. 解決策の概要"
+      ],
+      [
+        "5. 結論を述べる",
+        "6. 次のアクションを提示"
+      ]
+    ],
+    "current_slide_index": 0,
+    "covered": []
+  }
+}

@@ -3,7 +3,6 @@ package com.nbks.vr_common
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,21 +37,30 @@ import androidx.compose.ui.unit.dp
 import com.nbks.vr_common.ui.theme.VR_commonTheme
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 class MainActivity : ComponentActivity() {
 
     private var client: TalkAssistClient? = null
+    private var discovery: DiscoveryManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        discovery = DiscoveryManager(this) { srv, sid ->
+            AppState.discoveredMap[srv] = sid
+            AppState.discoveredItems.value = AppState.discoveredMap.toList()
+        }
+
         setContent {
             VR_commonTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     TalkAssistVrApp(
                         modifier = Modifier.padding(innerPadding),
                         onConnect = { server, sessionId -> connect(server, sessionId) },
-                        onDisconnect = { disconnect() }
+                        onDisconnect = { disconnect() },
+                        onStartDiscovery = { discovery?.start(); AppState.isDiscovering.value = true },
+                        onStopDiscovery = { discovery?.stop(); AppState.isDiscovering.value = false }
                     )
                 }
             }
@@ -59,6 +69,8 @@ class MainActivity : ComponentActivity() {
 
     private fun connect(server: String, sessionId: String) {
         disconnect()
+        discovery?.stop()
+        AppState.isDiscovering.value = false
         val url = if (server.endsWith("/")) server.dropLast(1) else server
         val wsUrl = "$url/ws/session/$sessionId?device=vr"
         client = TalkAssistClient(
@@ -95,11 +107,13 @@ class MainActivity : ComponentActivity() {
     private fun disconnect() {
         client?.close()
         client = null
+        AppState.connectionStatus = "未接続"
     }
 
     override fun onDestroy() {
         super.onDestroy()
         disconnect()
+        discovery?.stop()
     }
 }
 
@@ -112,16 +126,47 @@ object AppState {
     var presentationNav by mutableStateOf<JSONObject?>(null)
     var transcript by mutableStateOf(listOf<String>())
     var errorMessage by mutableStateOf("")
+    val isDiscovering = mutableStateOf(true)
+    val discoveredMap = ConcurrentHashMap<String, String>()
+    val discoveredItems = mutableStateOf(listOf<Pair<String, String>>())
+    var discoveredServer by mutableStateOf("")
+    var discoveredSessionId by mutableStateOf("")
+}
+
+private fun parseConnectionUrl(input: String): Pair<String, String>? {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return null
+    val regex = Regex("""^(wss?://[^/]+)/ws/session/([a-zA-Z0-9_-]+)""")
+    val match = regex.find(trimmed)
+    if (match != null) {
+        return match.groupValues[1] to match.groupValues[2]
+    }
+    val server = trimmed.substringBeforeLast("/ws/session", "")
+    val sessionId = trimmed.substringAfterLast("/", "")
+    if (server.isNotEmpty() && sessionId.isNotEmpty() && !sessionId.contains("/")) {
+        return server to sessionId
+    }
+    return null
 }
 
 @Composable
 fun TalkAssistVrApp(
     modifier: Modifier = Modifier,
     onConnect: (String, String) -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onStartDiscovery: () -> Unit,
+    onStopDiscovery: () -> Unit
 ) {
-    var server by remember { mutableStateOf("ws://192.168.1.10:8000") }
-    var sessionId by remember { mutableStateOf("") }
+    var manualExpanded by remember { mutableStateOf(false) }
+    var manualUrl by remember { mutableStateOf("") }
+
+    val discoveredItems by AppState.discoveredItems
+    val isDiscovering = AppState.isDiscovering.value
+    val isConnected = AppState.connectionStatus == "接続済み"
+
+    LaunchedEffect(isDiscovering) {
+        if (isDiscovering) onStartDiscovery() else onStopDiscovery()
+    }
 
     Column(modifier = modifier.padding(16.dp)) {
         Text(
@@ -130,39 +175,13 @@ fun TalkAssistVrApp(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = server,
-                onValueChange = { server = it },
-                label = { Text("サーバー") },
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedTextField(
-                value = sessionId,
-                onValueChange = { sessionId = it },
-                label = { Text("セッションID") },
-                modifier = Modifier.width(180.dp)
-            )
-        }
-
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row {
-            Button(onClick = { onConnect(server, sessionId) }) {
-                Text("接続")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = { onDisconnect() }) {
-                Text("切断")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(text = "状態: ${AppState.connectionStatus}", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = "状態: ${AppState.connectionStatus}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
 
         if (AppState.errorMessage.isNotEmpty()) {
             Text(
@@ -174,7 +193,104 @@ fun TalkAssistVrApp(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        DashboardSection(modifier = Modifier.weight(1f))
+        if (!isConnected) {
+            DiscoveryPanel(
+                isDiscovering = isDiscovering,
+                discoveredItems = discoveredItems,
+                onToggleDiscovery = { AppState.isDiscovering.value = !isDiscovering },
+                onSelect = { srv, sid ->
+                    AppState.discoveredServer = srv
+                    AppState.discoveredSessionId = sid
+                    onConnect(srv, sid)
+                },
+                manualExpanded = manualExpanded,
+                onToggleManual = { manualExpanded = !manualExpanded },
+                manualUrl = manualUrl,
+                onManualUrlChange = { manualUrl = it },
+                onManualConnect = {
+                    parseConnectionUrl(manualUrl)?.let { (srv, sid) ->
+                        AppState.discoveredServer = srv
+                        AppState.discoveredSessionId = sid
+                        onConnect(srv, sid)
+                    }
+                }
+            )
+        } else {
+            Row {
+                Button(onClick = onDisconnect) {
+                    Text("切断")
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            DashboardSection(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+fun DiscoveryPanel(
+    isDiscovering: Boolean,
+    discoveredItems: List<Pair<String, String>>,
+    onToggleDiscovery: () -> Unit,
+    onSelect: (String, String) -> Unit,
+    manualExpanded: Boolean,
+    onToggleManual: () -> Unit,
+    manualUrl: String,
+    onManualUrlChange: (String) -> Unit,
+    onManualConnect: () -> Unit
+) {
+    Column {
+        Button(onClick = onToggleDiscovery, modifier = Modifier.fillMaxWidth()) {
+            Text(if (isDiscovering) "検出を停止" else "サーバーを検出")
+        }
+
+        if (isDiscovering && discoveredItems.isEmpty()) {
+            Text(
+                text = "検出中...",
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.height(if (discoveredItems.isEmpty()) 0.dp else 180.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(discoveredItems) { (srv, sid) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        onSelect(srv, sid)
+                    }
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(text = sid, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Text(text = srv, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = onToggleManual, modifier = Modifier.fillMaxWidth()) {
+            Text(if (manualExpanded) "手動入力を閉じる" else "手動で接続")
+        }
+
+        if (manualExpanded) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = manualUrl,
+                onValueChange = onManualUrlChange,
+                label = { Text("ws://.../ws/session/ID") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onManualConnect, modifier = Modifier.fillMaxWidth()) {
+                Text("接続")
+            }
+        }
     }
 }
 
@@ -204,8 +320,27 @@ fun DashboardSection(modifier: Modifier = Modifier) {
     }
 
     AppState.presentationNav?.let { nav ->
-        nav.keys().forEach { key ->
-            tiles.add(TileData(title = "プレゼン: ${keyToLabel(key)}", content = formatJsonValue(nav.opt(key))))
+        val currentSlide = nav.optString("current_slide", "")
+        val nextScript = nav.optString("next_script", "")
+        val scriptArray = nav.optJSONArray("script")
+        val missingArray = nav.optJSONArray("missing")
+        if (currentSlide.isNotEmpty()) {
+            tiles.add(TileData(title = "現在のスライド", content = currentSlide))
+        }
+        if (nextScript.isNotEmpty()) {
+            tiles.add(TileData(title = "次に話す", content = nextScript))
+        }
+        scriptArray?.let { arr ->
+            val lines = (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+            if (lines.isNotEmpty()) {
+                tiles.add(TileData(title = "カンペ", content = lines.joinToString("\n") { "• $it" }))
+            }
+        }
+        missingArray?.let { arr ->
+            val lines = (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+            if (lines.isNotEmpty()) {
+                tiles.add(TileData(title = "言い漏れ", content = lines.joinToString("\n") { "• $it" }))
+            }
         }
     }
 

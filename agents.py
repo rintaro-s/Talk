@@ -9,6 +9,7 @@ from modes import (
     get_suggestion_prompt,
     parse_presentation_document,
     parse_presentation_script,
+    parse_presentation_script_per_slide,
 )
 
 
@@ -56,6 +57,21 @@ def parse_json(raw: str):
                 except json.JSONDecodeError:
                     break
     return None
+
+
+def _split_evenly(lines: List[str], n: int) -> List[List[str]]:
+    if n <= 0:
+        return []
+    if n == 1:
+        return [lines]
+    size = max(1, len(lines) // n)
+    result = []
+    for i in range(n - 1):
+        start = i * size
+        end = start + size
+        result.append(lines[start:end])
+    result.append(lines[(n - 1) * size:])
+    return result
 
 
 class AgentRunner:
@@ -146,6 +162,93 @@ class AgentRunner:
         messages = self._context_messages(session, system)
         return await self._generate(messages)
 
+    async def run_assign_script_to_slides(self, slides: List[Dict], script_lines: List[str]) -> List[List[str]]:
+        """カンペが --- 区切りでない場合、LLM で各スライドに割り当てる"""
+        if not script_lines:
+            return [[] for _ in slides]
+        if len(slides) <= 1:
+            return [script_lines]
+
+        system = """あなたはプレゼン資料とカンペを紐付けるアシスタントです。
+資料は複数のスライドに分割されています。カンペは1行ごとに話すポイントです。
+各カンペ行を、最も関連性の高いスライドに割り当ててください。JSONだけで返してください。
+{
+  "script_per_slide": [
+    ["スライド1に割り当てたカンペ行", "..."],
+    ["スライド2に割り当てたカンペ行", "..."],
+    ...
+  ]
+}
+説明や前置きは書かないでください。"""
+        messages = [{"role": "system", "content": system}]
+        ctx = "【資料スライド】\n"
+        for i, slide in enumerate(slides, 1):
+            ctx += f"[{i}] {slide.get('title', '')}\n{slide.get('body', '')}\n\n"
+        ctx += "【カンペ】\n" + "\n".join(f"{i+1}. {line}" for i, line in enumerate(script_lines))
+        messages.append({"role": "user", "content": ctx})
+
+        raw = await self._generate(messages)
+        parsed = parse_json(raw)
+        if parsed is None:
+            return _split_evenly(script_lines, len(slides))
+        result = parsed.get("script_per_slide", [])
+        if not isinstance(result, list) or len(result) != len(slides):
+            return _split_evenly(script_lines, len(slides))
+        return result
+
+    async def run_slide_check(self, session: dict, knowledge: str) -> Dict:
+        """ページめくり時：カンペと発話履歴を比較して未カバー項目を返す"""
+        pres = session.get("presentation", {})
+        slides = pres.get("slides", [])
+        scripts = pres.get("script_per_slide", [])
+        index = pres.get("current_slide_index", 0)
+        if not slides or index >= len(slides):
+            return {
+                "current_slide_index": index,
+                "current_slide": "",
+                "script": [],
+                "missing": [],
+                "covered": [],
+                "next_script": "",
+            }
+        slide = slides[index]
+        script = scripts[index] if index < len(scripts) else []
+        transcript = _format_utterances(session.get("utterances", []))
+        system = """あなたはプレゼンナビゲーターです。
+現在のスライドのカンペと発話履歴を比較し、カンペのうち発話履歴に含まれていないポイントを JSON だけで返してください。
+{
+  "missing": ["言っていないカンペ行"],
+  "covered": ["言ったと判断できるカンペ行"],
+  "next_script": "次に話すべきカンペの一文"
+}
+説明や前置きは書かないでください。"""
+        messages = [{"role": "system", "content": system}]
+        ctx = f"【現在のスライド】\n{slide.get('title', '')}\n{slide.get('body', '')}\n\n"
+        ctx += "【カンペ】\n" + "\n".join(f"{i+1}. {line}" for i, line in enumerate(script))
+        ctx += "\n\n"
+        if transcript:
+            ctx += f"【発話履歴】\n{transcript}\n\n"
+        messages.append({"role": "user", "content": ctx})
+        raw = await self._generate(messages)
+        parsed = parse_json(raw)
+        if parsed is None:
+            return {
+                "current_slide_index": index,
+                "current_slide": slide.get("title", ""),
+                "script": script,
+                "missing": [],
+                "covered": [],
+                "next_script": "",
+            }
+        return {
+            "current_slide_index": index,
+            "current_slide": slide.get("title", ""),
+            "script": script,
+            "missing": parsed.get("missing", []),
+            "covered": parsed.get("covered", []),
+            "next_script": parsed.get("next_script", ""),
+        }
+
     async def run_presentation_navigation(self, session: dict, knowledge: str) -> Dict:
         """プレゼン支援専用：次のカンペ行と未カバー項目を返す"""
         pres = session.get("presentation", {})
@@ -154,13 +257,21 @@ class AgentRunner:
         covered = pres.get("covered", [])
         transcript = _format_utterances(session.get("utterances", []))
 
+        index = pres.get("current_slide_index", 0)
         if not doc_text.strip() and not script_text.strip():
             return {
+                "current_slide_index": index,
+                "current_slide": "",
+                "script": [],
                 "current_topic": "資料とカンペが未登録です",
                 "next_script": "",
                 "missing": [],
                 "filler": "",
             }
+        slides = parse_presentation_document(doc_text.strip())
+        scripts = parse_presentation_script_per_slide(script_text.strip())
+        slide = slides[index] if index < len(slides) else {}
+        script = scripts[index] if index < len(scripts) else []
 
         system = """あなたはプレゼンのナビゲーターです。資料スライドとカンペ、発話履歴を参照してJSON形式で回答してください。
 {
@@ -192,7 +303,18 @@ class AgentRunner:
         raw = await self._generate(messages)
         parsed = parse_json(raw)
         if parsed is None:
-            return {"current_topic": raw.strip(), "next_script": "", "missing": [], "filler": ""}
+            return {
+                "current_slide_index": index,
+                "current_slide": slide.get("title", ""),
+                "script": script,
+                "current_topic": raw.strip(),
+                "next_script": "",
+                "missing": [],
+                "filler": "",
+            }
+        parsed["current_slide_index"] = index
+        parsed["current_slide"] = slide.get("title", "")
+        parsed["script"] = script
         return parsed
 
     async def run_all(self, session: dict, knowledge: str) -> Dict[str, object]:

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>会話補助</title>
 <link rel="stylesheet" href="/static/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -93,7 +94,7 @@
           </div>
           <div class="form-group">
             <label>カンペ <span class="required">必須</span></label>
-            <textarea id="presentationScript" placeholder="1行ごとに話すポイントを書いてください。"></textarea>
+            <textarea id="presentationScript" placeholder="1行ごとに話すポイントを書いてください。各スライドのカンペは --- で区切ってください。"></textarea>
             <div class="file-inline">
               <label for="scriptFile" class="btn small">ファイルから読み込む</label>
               <input type="file" id="scriptFile" accept=".txt,.md,text/plain,text/markdown">
@@ -142,8 +143,9 @@
         <div class="block subtle">
           <div class="block-title">外部デバイス接続</div>
           <p class="small-copy">Watch / VR クライアントから接続する場合は、以下を入力してください。</p>
-          <div class="conn-row"><span>サーバー</span> <code id="serverUrl"></code></div>
-          <div class="conn-row"><span>セッションID</span> <code id="sessionIdDisplay"></code></div>
+          <div class="conn-row"><span>サーバー</span> <code id="serverUrl"></code> <button class="btn small" id="copyServerUrl">コピー</button></div>
+          <div class="conn-row"><span>セッションID</span> <code id="sessionIdDisplay"></code> <button class="btn small" id="copySessionId">コピー</button></div>
+          <div class="qr-row"><span>QR</span> <canvas id="qrCode"></canvas></div>
         </div>
       </div>
 
