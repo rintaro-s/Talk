@@ -210,6 +210,11 @@ async function startSession() {
   $("#session").classList.remove("hidden");
   $("#modeLabel").textContent = MODE_NAMES[state.mode];
 
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  $("#serverUrl").textContent = `${proto}//${location.host}`;
+  $("#sessionIdDisplay").textContent = session.id;
+  $("#connectionInfo").classList.remove("hidden");
+
   state.transcript = [];
   renderDashboard();
   connectSocket();

@@ -2,12 +2,13 @@ import base64
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.websockets import WebSocketState
 
 import config as cfg
 import speech as sp
@@ -16,6 +17,7 @@ from agents import AgentRunner
 from modes import MODES
 
 STATIC_DIR = Path(__file__).parent / "static"
+SESSION_CONNECTIONS: Dict[str, List[WebSocket]] = {}
 
 
 @asynccontextmanager
@@ -190,20 +192,31 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.close()
         return
 
+    device = websocket.query_params.get("device", "browser")
     settings = cfg.load_config()
     runner = AgentRunner(settings)
+    SESSION_CONNECTIONS.setdefault(session_id, []).append(websocket)
 
     async def send(kind: str, payload: dict):
-        await websocket.send_text(json.dumps({"type": kind, **payload}))
+        if websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.send_text(json.dumps({"type": kind, **payload}))
+
+    async def broadcast(kind: str, payload: dict):
+        for ws in list(SESSION_CONNECTIONS.get(session_id, [])):
+            if ws.client_state == WebSocketState.CONNECTED:
+                try:
+                    await ws.send_text(json.dumps({"type": kind, **payload}))
+                except Exception:
+                    pass
 
     async def process_utterance(speaker: str, text: str):
         session = tr.add_utterance(session_id, speaker, text)
         if not session:
             return
-        await send("transcript", {"speaker": speaker, "text": text})
+        await broadcast("transcript", {"speaker": speaker, "text": text})
         knowledge = tr.load_knowledge(session["mode"])
         results = await runner.run_all(session, knowledge)
-        await send("assist", results)
+        await broadcast("assist", results)
 
     async def process_pause():
         session = tr.load_session(session_id)
@@ -211,10 +224,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             return
         knowledge = tr.load_knowledge(session["mode"])
         suggestion = await runner.run_suggestion(session, knowledge, situation="pause")
-        await send("suggestion", {"text": suggestion})
+        await broadcast("suggestion", {"text": suggestion})
         if session.get("mode") == "presentation":
             nav = await runner.run_presentation_navigation(session, knowledge)
-            await send("presentation_nav", nav)
+            await broadcast("presentation_nav", nav)
 
     async def process_gap():
         session = tr.load_session(session_id)
@@ -222,10 +235,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             return
         knowledge = tr.load_knowledge(session["mode"])
         filler = await runner.run_suggestion(session, knowledge, situation="gap")
-        await send("filler", {"text": filler})
+        await broadcast("filler", {"text": filler})
         if session.get("mode") == "presentation":
             nav = await runner.run_presentation_navigation(session, knowledge)
-            await send("presentation_nav", nav)
+            await broadcast("presentation_nav", nav)
+
+    recognizer = None
+    if device == "watch":
+        vosk_model = settings.get("speech", {}).get("vosk_model", "small")
+        try:
+            recognizer = sp.VoskRecognizer(model_type=vosk_model)
+        except Exception as e:
+            await send("error", {"message": f"Vosk 認識器の初期化に失敗しました: {e}"})
 
     try:
         while True:
@@ -235,20 +256,52 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             except json.JSONDecodeError:
                 continue
             mtype = msg.get("type")
-            if mtype == "utterance":
-                await process_utterance(msg.get("speaker", "話者"), msg.get("text", ""))
-            elif mtype == "pause":
-                await process_pause()
-            elif mtype == "gap":
-                await process_gap()
-            elif mtype == "assist":
-                session = tr.load_session(session_id)
-                if session:
-                    knowledge = tr.load_knowledge(session["mode"])
-                    results = await runner.run_all(session, knowledge)
-                    await send("assist", results)
-            elif mtype == "ping":
-                await send("pong", {})
+
+            if device == "watch":
+                if mtype == "start":
+                    model_type = msg.get("model", settings.get("speech", {}).get("vosk_model", "small"))
+                    try:
+                        recognizer = sp.VoskRecognizer(model_type=model_type)
+                        await send("ready", {"model": model_type})
+                    except Exception as e:
+                        await send("error", {"message": str(e)})
+                elif mtype == "audio":
+                    if not recognizer:
+                        await send("error", {"message": "認識器が開始されていません"})
+                        continue
+                    try:
+                        pcm = base64.b64decode(msg.get("data", ""))
+                        result = recognizer.accept_waveform(pcm)
+                        text = result.get("text", "") or result.get("partial", "")
+                        await send(result["type"], {"text": text})
+                    except Exception as e:
+                        await send("error", {"message": str(e)})
+                elif mtype == "stop":
+                    if recognizer:
+                        result = recognizer.final_result()
+                        text = result.get("text", "")
+                        if text:
+                            await process_utterance("watch", text)
+                        else:
+                            await send("final", {"text": ""})
+                        recognizer.reset()
+                elif mtype == "ping":
+                    await send("pong", {})
+            else:
+                if mtype == "utterance":
+                    await process_utterance(msg.get("speaker", "話者"), msg.get("text", ""))
+                elif mtype == "pause":
+                    await process_pause()
+                elif mtype == "gap":
+                    await process_gap()
+                elif mtype == "assist":
+                    session = tr.load_session(session_id)
+                    if session:
+                        knowledge = tr.load_knowledge(session["mode"])
+                        results = await runner.run_all(session, knowledge)
+                        await broadcast("assist", results)
+                elif mtype == "ping":
+                    await send("pong", {})
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -256,6 +309,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             await send("error", {"message": str(e)})
         except Exception:
             pass
+    finally:
+        connections = SESSION_CONNECTIONS.get(session_id, [])
+        if websocket in connections:
+            connections.remove(websocket)
 
 
 @app.websocket("/ws/speech/vosk")

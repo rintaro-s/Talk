@@ -359,6 +359,22 @@ ul.clean li+li{margin-top:6px}
 .slide-progress span.current{background:#887661}
 
 /* minutes view */
+.connection-info{margin-bottom:8px}
+.connection-info .block{margin-bottom:0}
+.conn-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:5px;
+  font-size:13px;
+}
+.conn-row span{color:var(--muted);min-width:90px}
+.conn-row code{
+  background:#eadcc8;
+  padding:3px 6px;
+  font-family:monospace;
+}
+
 .minutes-head{
   display:flex;
   align-items:center;

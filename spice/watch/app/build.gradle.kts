@@ -43,6 +43,8 @@ dependencies {
     implementation(libs.compose.ui.tooling)
     implementation(libs.core.splashscreen)
     implementation(libs.play.services.wearable)
+    implementation(libs.okhttp)
+    implementation("androidx.compose.material3:material3")
     implementation(libs.ui)
     implementation(libs.ui.graphics)
     implementation(libs.ui.tooling.preview)
